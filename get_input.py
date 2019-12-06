@@ -8,7 +8,7 @@ def get_aoc_input(day):
     r = requests.get(input_url, cookies=cookies)
     if not r.ok:
         raise ValueError(r.text)
-    return [l for l in r.iter_lines()]
+    return [l.decode("ascii") for l in r.iter_lines()]
 
 if __name__ == "__main__":
     i = get_aoc_input(1)
