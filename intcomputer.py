@@ -2,16 +2,22 @@ from get_input import get_aoc_input
 import logging
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger()
-
+STOPPED = 0
+HALT = 99
+WAIT_INPUT = 3
+WAIT_OUTPUT = 4
+RUNNING = 1
 class operation(object):
     def __init__(self, length, modes):
         self.length = length
         self.argc = length-1
         self.argv = [0]*self.argc
+        log.debug("during init self.argv = " + str(self.argv))
         self.modes = modes
     def consume(self, codes, ip):
         """ take the necessary arguments from the code list. """
         for i in range(self.argc):
+            log.debug(f"setting argv[{i}] = {codes[ip+i+1]}")
             self.argv[i] = codes[ip+i+1]
         self.nextip = ip + self.length
     def access_param(self, pnum, codes):
@@ -123,8 +129,12 @@ class op_input(operation):
     def __init__(self, modes):
         super().__init__(2, modes)
     def execute(self, codes):
-        codes[self.argv[0]] = self.input
+        dest_pointer = self.argv[0]
+        log.debug("self argv = " + repr(self.argv))
+        log.debug(f"setting codes[{self.argv[0]}] = {self.input}") 
+        codes[dest_pointer] = self.input
         return True
+
 class op_output(operation):
     def execute(self, codes):
         self.output = self.access_param(0, codes)
@@ -163,13 +173,76 @@ def parse_opcode(x):
     #     return isequal(modes)
     # if opcode == 99: #hlt
     #     return halt()
+
+class intcomputer(object):
+    def __init__(self, code="", input_queue=[]):
+        self.state = STOPPED
+        if len(code) > 0:
+            self.load_program(code)
+        else:
+            self.code = []
+        if not isinstance(input_queue, list):
+            input_queue = [input_queue]
+            # print(f"new input queue: {input_queue}")
+        self.input_queue = input_queue
+        self.output_queue = []
+
+    def push_input(self, inp):
+        self.input_queue.insert(0,inp)
+
+    def load_program(self, s):
+        if isinstance(s, str):
+            self.code = [int(x) for x in s.strip().split(",")]
+        else:
+            self.code = s
+        self.reset()
+
+    def reset(self):
+        self.memory = self.code
+        self.ip = 0
+
+    def get_output(self):
+        return self.output_queue.pop()
+
+    def run(self):
+        if self.state == HALT:
+            return False
+        self.state = RUNNING
+        while self.state == RUNNING:
+            c = self.memory[self.ip]
+            op = parse_opcode(c)
+            op.consume(self.memory, self.ip)
+            if isinstance(op, op_input):
+                log.debug(f"input queue is: {self.input_queue}")
+                if len(self.input_queue) > 0:
+                    op.input = self.input_queue.pop()
+                    log.debug(f"input queue is: {self.input_queue}")
+                else:
+                    self.state = WAIT_INPUT
+                    break
+            running = op.execute(self.memory)
+            if not running:
+                self.state = HALT
+                break
+            self.ip = op.nextip
+            if isinstance(op, op_output):
+                # self.state = WAIT_OUTPUT
+                log.debug(f"OUTPUT!: {op.output}")
+                self.output_queue.insert(0, op.output)
+        return self.state
+
+
+
+
 def run_program(codes_inp, prog_input):
     if isinstance(codes_inp, str):
-        codes_inp = [int(x) for x in codes_inp.strip().split(",")]
+        codes_inp = [int(a.strip()) for a in codes_inp.split(",")]
     output = []
     if not isinstance(prog_input, list):
         prog_input = [prog_input]
+    log.debug(f"prog_input = {prog_input}")
     codes = list(codes_inp) # new memory
+    log.debug(codes)
     input_counter = 0
     ip = 0
     running = True
@@ -178,8 +251,11 @@ def run_program(codes_inp, prog_input):
         op = parse_opcode(c)
         op.consume(codes, ip)
         if isinstance(op, op_input):
+            log.debug(f"prog_input = {prog_input}")
             op.input = prog_input[input_counter]
+            log.debug(f"{op.input}")
             input_counter += 1
+        log.debug(f"executing operation {op}")
         running = op.execute(codes)
         ip = op.nextip
         if isinstance(op, op_output):
