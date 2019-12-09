@@ -12,26 +12,47 @@ class operation(object):
         self.length = length
         self.argc = length-1
         self.argv = [0]*self.argc
-        log.debug("during init self.argv = " + str(self.argv))
+        # log.debug("during init self.argv = " + str(self.argv))
         self.modes = modes
-    def consume(self, codes, ip):
+        self.bp_change = 0
+
+    def consume(self, codes, ip, bp=0):
         """ take the necessary arguments from the code list. """
         for i in range(self.argc):
-            log.debug(f"setting argv[{i}] = {codes[ip+i+1]}")
+            # log.debug(f"setting argv[{i}] = {codes[ip+i+1]}")
             self.argv[i] = codes[ip+i+1]
         self.nextip = ip + self.length
+        self.bp = bp
     def access_param(self, pnum, codes):
         log.debug(f'accessing parameter {pnum} in mode {self.modes[pnum]}')
         log.debug(f'DEBUG: self.modes = {self.modes}')
-        log.debug(f'DEBUG: pnum = {pnum}')
-        assert (self.modes[pnum] in [0,1])
+        log.debug(f'DEBUG: self.argv= {self.argv}')
+        # log.debug(f'DEBUG: pnum = {pnum}')
+        assert (self.modes[pnum] in [0,1,2])
         if self.modes[pnum] == 0: # position mode
-            log.debug(f'returning value at addr {self.argv[pnum]}')
+            log.debug(f'returning pmode value *{self.argv[pnum]}')
             return codes[self.argv[pnum]]
         else:
-            if self.modes[pnum] == 1:
-                log.debug(f'returning value {self.argv[pnum]}')
+            if self.modes[pnum] == 1: # value mode
+                log.debug(f'returning vmode value {self.argv[pnum]}')
                 return self.argv[pnum]
+            else:
+                if self.modes[pnum] == 2: # relative mode
+                    log.debug(f'returning rmode value {codes[self.bp+self.argv[pnum]]} at *({self.bp}+{self.argv[pnum]})')
+                    log.debug(f"{codes[0:5]}")
+                    retval = codes[self.bp + self.argv[pnum]]
+                    log.debug(f"retval = {retval}")
+                    return retval
+    def access_dest_param(self, pnum, codes):
+        assert (self.modes[pnum] in [0,1,2])
+        if self.modes[pnum] == 0: # position mode
+            return self.argv[pnum]
+
+        if self.modes[pnum] == 2: # relative mode
+            retval = self.bp + self.argv[pnum]
+            return retval
+
+
 
 class addition(operation):
     def __init__(self, modes):
@@ -40,12 +61,12 @@ class addition(operation):
     def execute(self,codes):
         # do the addition
         a = self.access_param(0, codes)
-        log.debug(f'a = {a}')
+        # log.debug(f'a = {a}')
         b = self.access_param(1, codes)
-        log.debug(f'b = {b}')
-        dest = self.argv[2]
-        log.debug(f'dest = {dest}')
-        log.debug(f"setting addr {dest} = {a+b}")
+        # log.debug(f'b = {b}')
+        dest = self.access_dest_param(2, codes)
+        # log.debug(f'dest = {dest}')
+        log.debug(f"*{dest} = {a}+{b} = {a+b}")
         codes[dest] = a + b
         return True
 
@@ -56,12 +77,12 @@ class isequal(operation):
     def execute(self, codes):
         # do the mult
         a = self.access_param(0, codes)
-        log.debug(f'a = {a}')
+        # log.debug(f'a = {a}')
         b = self.access_param(1, codes)
-        log.debug(f'b = {b}')
-        dest = self.argv[2]
-        log.debug(f'dest = {dest}')
-        log.debug(f"setting addr {dest} = {int(a==b)}")
+        # log.debug(f'b = {b}')
+        dest = self.access_dest_param(2, codes)
+        # log.debug(f'dest = {dest}')
+        log.debug(f"*{dest} = {a}=={b} = {int(a==b)}")
         codes[dest] = int(a == b)
         return True
 
@@ -96,11 +117,19 @@ class less_than(operation):
     def execute(self, codes):
         a = self.access_param(0, codes)
         b = self.access_param(1, codes)
-        dest = self.argv[2]
+        dest = self.access_dest_param(2, codes)
         if a < b:
             codes[dest] = 1
         else:
             codes[dest] = 0
+        return True
+
+class base_adjust(operation):
+    def __init__(self, modes):
+        super().__init__(2, modes)
+    def execute(self,codes):
+        d = self.access_param(0, codes)
+        self.bp_change = d
         return True
 
 class halt(operation):
@@ -116,12 +145,13 @@ class multiplication(operation):
     def execute(self, codes):
         # do the mult
         a = self.access_param(0, codes)
-        log.debug(f'a = {a}')
+        # log.debug(f'a = {a}')
         b = self.access_param(1, codes)
-        log.debug(f'b = {b}')
-        dest = self.argv[2]
-        log.debug(f'dest = {dest}')
-        log.debug(f"setting addr {dest} = {a*b}")
+        # log.debug(f'b = {b}')
+        log.debug("now dest")
+        dest = self.access_dest_param(2, codes)
+        # log.debug(f'dest = {dest}')
+        log.debug(f"*{dest} = {a}*{b} = {a*b}")
         codes[dest] = a * b
         return True
 
@@ -129,7 +159,7 @@ class op_input(operation):
     def __init__(self, modes):
         super().__init__(2, modes)
     def execute(self, codes):
-        dest_pointer = self.argv[0]
+        dest_pointer = self.access_dest_param(0, codes)
         log.debug("self argv = " + repr(self.argv))
         log.debug(f"setting codes[{self.argv[0]}] = {self.input}") 
         codes[dest_pointer] = self.input
@@ -152,6 +182,7 @@ OPCODES = {1: addition,
            6: jump_if_zero,
            7: less_than,
            8: isequal,
+           9: base_adjust,
            99: halt,
           }
 def parse_opcode(x):
@@ -175,8 +206,13 @@ def parse_opcode(x):
     #     return halt()
 
 class intcomputer(object):
-    def __init__(self, code="", input_queue=[]):
+    def dump(self):
+        for c in self.memory:
+            print(f"{c}")
+
+    def __init__(self, code="", input_queue=[], memsize=1024):
         self.state = STOPPED
+        self.memsize = memsize
         if len(code) > 0:
             self.load_program(code)
         else:
@@ -198,8 +234,9 @@ class intcomputer(object):
         self.reset()
 
     def reset(self):
-        self.memory = self.code
+        self.memory = self.code + [0]*(self.memsize-len(self.code))
         self.ip = 0
+        self.bp = 0 # base pointer
 
     def get_output(self):
         return self.output_queue.pop()
@@ -211,7 +248,7 @@ class intcomputer(object):
         while self.state == RUNNING:
             c = self.memory[self.ip]
             op = parse_opcode(c)
-            op.consume(self.memory, self.ip)
+            op.consume(self.memory, self.ip, self.bp)
             if isinstance(op, op_input):
                 log.debug(f"input queue is: {self.input_queue}")
                 if len(self.input_queue) > 0:
@@ -225,6 +262,9 @@ class intcomputer(object):
                 self.state = HALT
                 break
             self.ip = op.nextip
+            self.bp += op.bp_change
+            if op.bp_change != 0:
+                log.debug(f"BP changed to {self.bp}!")
             if isinstance(op, op_output):
                 # self.state = WAIT_OUTPUT
                 log.debug(f"OUTPUT!: {op.output}")
@@ -250,6 +290,7 @@ def run_program(codes_inp, prog_input):
         c = codes[ip]
         op = parse_opcode(c)
         op.consume(codes, ip)
+        log.debug(op)
         if isinstance(op, op_input):
             log.debug(f"prog_input = {prog_input}")
             op.input = prog_input[input_counter]
