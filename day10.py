@@ -1,5 +1,7 @@
 from get_input import get_aoc_input
 from itertools import product
+import numpy as np
+import math
 aoc_inp = get_aoc_input(10)
 
 #inp = """.#..#
@@ -114,3 +116,49 @@ for asteroid in asteroids:
 
 max_vis = max(visible.keys(), key=lambda x: len(visible[x]))
 print(f"maximum visible: {len(visible[max_vis])} for {max_vis})")
+
+
+#### part 2
+vapor_counter = 0
+station = max_vis
+visible = visible[max_vis]
+print(f"station at {station}")
+def calculate_angle(station, ast):
+    x = ast[0] - station[0]
+    y = ast[1] - station[1]
+    theta = np.degrees(math.atan2(y,x)) + 90
+    if ast == (11,12):
+        print(theta)
+    if theta < 0:
+        theta += 360
+    return theta
+angles =  {}
+for v in visible:
+    angles[v] = calculate_angle(station,v)
+angles_idx_sorted = sorted(angles, key=lambda x: angles[x])
+i = 199
+print(f"{i+1}.")
+min_angle_idx = angles_idx_sorted[i]
+print(angles[min_angle_idx])
+print(min_angle_idx)
+
+# print(f"{v} visible from {station}, diff: {(v[0]-station[0], v[1]-station[1])} angle: {t:.2f}")
+
+
+# def vaporize(coord):
+#     del asteroids[coord]
+#     vapor_counter += 1
+
+# vec = (0, -1)
+# angles = {}
+# for asteroid in visible:
+#     angle = calculate_angle(vec, asteroid) # ccw angle, always positive
+#     angles[asteroid] = angle
+#     if angle == 0:
+#         vaporize(asteroid)
+#         break
+
+# smallest_angle = min(angles.keys(), key=lambda x: angles[x])
+# new_vec = asteroids[smallest_angle]
+# if ticks:over(new_vec):
+#     visible = get_visible_from(station)
